@@ -1,0 +1,400 @@
+---
+title: "PROGETTO-SOCIAL MEDIA"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(rtweet)
+library(twitteR)
+library(httpuv) 
+library(dplyr)
+library(tidyverse)
+library(tm)
+library(wordcloud2)
+library(readxl) 
+library (qdapRegex)
+library(stringr)
+library(tidytext)
+library(tidygraph)
+library(ggraph)
+library(glue)
+library(textdata)
+library(syuzhet)
+library(lubridate)
+library(scales)
+library(reshape2)
+library(igraph)
+library(text2vec)
+library(quanteda)
+library(corpustools)
+library(tokenizers)
+options(scipen = 999)
+```
+
+Questo report ha come principale obiettivo l’analisi dell’opinione pubblica riguardante la situazione socio-politica durante il periodo finale della terza ondata di diffusione del virus Sars COVID-19. Ci si trova nell’aprile 2021, periodo connotato da grosso movimento sociale a causa di discussioni sulle riaperture delle attività commerciali e aziendali. Per effettuare tale analisi, è occorso in primis la creazione di un dataset idoneo e coerente agli obiettivi prestabiliti di questo report.
+
+Il dataset di riferimento, oggetto dell’analisi di text mining e dei grafi presentata di seguito, è stato ricavato mediante la funzione search_tweet. Tale funzione ha la capacità di prelevare un certo numero di tweets dall’API ufficiale Twitter. L’hashtag scelto per il prelievo dei Tweets dall’API è stato #Ioapro, espressione di tendenza sulle piattaforme social in discussioni inerenti alle manifestazioni pro-aperture. Di seguito si presenterà la struttura del Dataset, il trattamento pre-processing effettuato e qualche analisi descrittiva. 
+
+Il dataset è composto da 7832 osservazioni (ogni osservazioni corrisponde ad un Tweet) e da 90 variabili. A causa di restrizioni  imposte dall’API, molte variabili presentano valori nulli. Tuttavia ci sono svariate variabili completamente disponibili, protagoniste dell’analisi presentata di seguito (testo del tweet, nome utente, conteggio dei retweet e dei preferiti, dispositivo da cui è avvenuta la creazione del tweet, data e ora della pubblicazione del tweet…).
+Inoltre il dataset contiene tweets pubblicati in un arco temporale che parte dal 12aprile 2021 fino al 30 aprile 2021: tale periodo corrisponde al momento preciso in cui l’hashtag #ioapro ha avuto maggior risonanza mediatica e, di conseguenza, grande diffusione sui social media.
+
+```{r}
+hashtag_1 <- read_excel("C:/Users/giuli/Downloads/hashtag_1.xlsx") 
+hashtag_2 <- read_excel("C:/Users/giuli/Downloads/hashtag_2.xlsx") 
+dset = rbind(hashtag_1, hashtag_2)
+glimpse(dset)
+```
+
+```{r}
+ts_plot(dset, "3 hours", colour = "red", lwd=1) +
+ggplot2::theme_minimal() +
+ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", colour = "blue")) +
+ggplot2::labs(
+x = NULL, y = NULL,
+title = "Frequenza di Tweets #ioapro dall'11 al 29 aprile 2021",
+subtitle = "Tweets per intervallo di 3 ore",
+caption = "\nSource: Dati dall'API Twitter"
+)
+```
+
+. 
+```{r}
+ts_plot(dset, "24 hours", colour = "red", lwd=1) +
+ggplot2::theme_minimal() +
+ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", colour = "blue")) +
+ggplot2::labs(
+x = NULL, y = NULL,
+title = "Frequenza di Tweets #ioapro dall'11 al 29 aprile 2021",
+subtitle = "Tweets per intervallo di 24 ore",
+caption = "\nSource: Dati dall'API Twitter"
+)
+```
+
+
+```{r}
+dset2=dset%>%
+filter(created_at<"2021-04-13")
+
+ts_plot(dset2, "1 hours", colour = "red", lwd=1) +
+ggplot2::theme_minimal() +
+ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", colour = "blue")) +
+ggplot2::labs(
+x = NULL, y = NULL,
+title = "Frequenza di Tweets #ioapro - 12 Aprile",
+subtitle = "Tweets per intervallo di 1 ora",
+caption = "\nSource: Dati dall'API Twitter"
+)
+
+```
+
+Ciò che si evince dai grafici temporali è un picco di tweets risalente al 12 aprile 2021, in particolare dalle 12.00 alle 17.00. La diffusione dell'hashtag poi decrementa in modo molto rapido, fino a svanire quasi del tutto il 29 aprile. La motivazione di tale picco è ricercabile negli eventi del 12 aprile stesso, giorno in cui si è svolta la manifestazione "Io Apro" nel centro di Roma. La protesta ha fatto parlare molto di sè nel giorno steesso in cui si è verificata in quanto è stata caratterizzata da grossi scontri con polizia e dalla partecipazione alla manifestazione anche da parte dell'estrema destra italiana. 
+
+Per procedere con l’analisi testuale, occorre creare un Corpus (raccolta di materiale testuale coerente con l’oggetto dell’analisi testuale scelta), che si configurerà come elemento principale e fondante delle future analisi di testo. Il corpus racchiude il testo “processato”, ovvero su cui è già stato effettuato un pre-processing. Per pre-processing si intende quell’insieme di tecniche volte a pulire il testo, dunque a depurarlo da eventuali elementi che risultano inutili (o talvolta fastidiosi) per l’analisi testuale da svolgere.  In questo report il preprocessing è consistito nell’eliminazione della punteggiatura, dei numeri, degli spazi in eccesso, delle stopwords italiane, degli url, delle emoj e dell’hashtag utilizzato per prelevare i dati #ioapro.
+
+Avviene inoltre la creazione della bag-of-words, una schematizzazione del corpus che consente di maneggiare i dati testuali al fine di proseguire con un’analisi statistica degli stessi. Nello specifico, nella bag-of-words ogni termine è il peso della corrispondente forma di un documento, considerato un vettore nello spazio delle forme del vocabolario (distribuzione statistica delle parole all’interno del corpus).
+```{r}
+#eliminazione emoji 
+dset$text <- gsub("[^\x01-\x7F]", "", dset$text)
+#eliminazione http
+dset$text <-gsub ("http\\S+\\s*", "", dset$text)
+#creazione corupus 
+myCorpus<-Corpus(VectorSource(dset$text))
+
+#eliminazione #ioapro
+dset$text <-gsub ("#IoApro", "", dset$text)
+dset$text <-gsub ("#ioapro", "", dset$text)
+dset$text <-gsub ("#IOAPRO", "", dset$text)
+dset$text <-gsub ("#Ioapro", "", dset$text)
+dset$text <-gsub ("#ioApro", "", dset$text)
+
+clean <- function(corpus){
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, stripWhitespace) 
+  corpus <- tm_map(corpus, removeNumbers)
+  corpus <- tm_map(corpus, tolower)
+  corpus <- tm_map(corpus, removeWords, stopwords("it"))
+  corpus <- tm_map(corpus, removeWords, "ioapro")
+  return(corpus)
+}
+
+corpus_new <- clean(myCorpus)
+```
+
+Fondamentale per l’analisi testuale è la creazione delle occorrenze (l numero di volte in cui una unità lessicale è presente nella raccolta). Ciò ci permette di addentrarci nella prima statistica descrittiva del corpus di riferimento: la visualizzazione grafica delle parole più frequenti. 
+La visualizzazione delle parole più frequenti è il primo passo per la comprensione di ciò che si sta analizzando e, seppure non fornisce un’analisi accurata del testo, è essenziale per la corretta interpretazione dello scenario di riferimento che si vuole analizzare.
+
+```{r}
+tdm <- TermDocumentMatrix(corpus_new)
+tdm <-removeSparseTerms(tdm, sparse=0.9998)
+tdm <- as.matrix(tdm)
+headtdm <- head(tdm, 10)
+freqtot <- as.data.frame(rowSums(tdm))
+word <- as.data.frame(rownames(freqtot))
+freqtot <- cbind(word, freqtot)
+colnames(freqtot) <- c("word", "freq")
+```
+
+Le parole più frequenti sono indiscutibilmente di contesto politico  (casapound,fascisti, dittatura, Salvini…), di contesto generale (covid, aprile, Roma…) e di connotazione sovversiva (protesta, manifestare, basta, bastacoprifuoco… ). Si intravede un’atmosfera mediatica quasi in rivolta, con un’accezione di disapprovazione, probabilmente rivolta alle scelte politiche del momento.
+
+```{r}
+term60 <- subset(freqtot, freq > 130)
+ggplot(term60,aes(x = reorder(word, -freq), y = freq))+
+  geom_bar(stat = "identity", fill = rainbow(1)) +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1))+
+  xlab(label =  "word") 
+```
+
+
+La $Wordcloud$ è una rappresentazione grafica delle parole che compongono il corpus, in cui la dimensione delle parole è direttamente proporzionale alla propria frequenza. 
+```{r}
+set.seed(123)
+wordcloud2(data= freqtot,size = 0.5, shape = 'pentagon')
+```
+
+Le parole più frequenti all'interno del corpus considerato sono: "Roma" e "Piazza", la città in cui si è svolta la manifestazione; "ristoratori", coloro che hanno manifestato per la riapertura dei ristoranti; "Aprile", il mese in cui si è tenuta la manifestazione. "CasaPound" in quanto dopo il loro arrivo la manifestazione è diventata violenta. "Montecitorio", è una parola utilizzata spesso dai CasaPound durante la manifestazione i quali gridavano alle forze dell'ordine di farli arrivare proprio a Montecitorio poichè era un loro diritto. "Draghi", il presidente del Consiglio. "Speranza" il ministro della salute; "coprifuoco", il motivo per il quale non si poteva aprire. 
+
+Data una sequenza di parole, ad esempio un testo, è possibile estrarre i $Digrammi$, ovvero sottosequenze composte da due elementi adiacenti. Al fine di ottenere i bigrammi è necessario tokenizzare il testo, ovvero suddividere il testo in tokens, blocchi testuali costituiti da lessemi.  L'analisi dei bigrammi è utile in quanto i bigrammi rispetto alle singole parole consentono di comprendere meglio il contesto e quindi esprimono più informazioni.
+
+```{r}
+library(corpus)
+bigrams <- term_stats(corpus_new, ngrams = 2) 
+bigrams <- bigrams %>% 
+  select(-support)
+bigrams <- as.data.frame(bigrams)
+head(bigrams, 10)
+```
+
+Nel seguente graficono sono rappresentati i digrammi aventi una frequenza maggiore di 80. Si evince che il digramma più frequente all'interno dei tweets analizzati è "modo pacifico" in quanto soprattutto il leader della manifestazione ha più volte ribadito la loro volontà di arrivare in "modo pacifico" a Montecitorio soprattutto dopo l'intromissione dei CasaPound. 
+```{r}
+bigrams %>% 
+        filter(count > 80) %>% 
+        ggplot(aes(x= reorder(term, count), y= count)) + geom_col() + theme(axis.text.x = element_text(angle = 90,
+        hjust = 1, vjust = 0.5)) + coord_flip() + xlab(label = "bigram")
+```
+
+Per la rappresentazione dei bigrammi sottoforma di grafi, ed in particolare per identificare la posizione dei nodi nello spazio e quindi le loro coordinate utilizziamo l'algoritmo Force-Directed proposto da Fructherman e Reingold. La rete è trattata come se fosse un sistema fisico composto da sfere e molle e si considerano le forze di attrazione e repulsione applicate dalle molle sulle sfere adiacenti che rappresentano i nodi. La forza di repulsione è calcolata utilizzando la seguente formula : $f_{rep}(p_{u},p_{v}) = \frac{l^{2}}{|| p_{u}- p_{v}||} \vec{p_{u}} \vec{p_{v}}$. La forza di attrazione è calcolata utilizzanfo la seguente formula: $f_{att}(p_{u},p_{v}) = \frac{|| p_{u}- p_{v} ||^{2}}{l}\vec{p_{v}} \vec{p_{u}}$
+dove $|| p_{u}- p_{v} ||$ è la distanza Euclidea tra il nodo u ed il nodo v 
+$l$ è la lunghezza della molla 
+$\vec{p_{v}} \vec{p_{u}$ sono i vettori unitari che forniscono la direzione da $p_{u}$ a $p_{v}$.
+La somma della forza di attrazione e della forza di repulsione su ogni nodo definiscono la direzione del nodo nello spazio. 
+Il sistema raggiunge l'equilibrio quando le forze che agiscono su ogni nodo sono bilanciate e quindi di conseguenza i nodi si stabiliscono nella propria configurazione definitiva.  
+
+```{r}
+library(tidygraph)
+library(ggraph)
+
+bigram_graph <- bigrams %>%
+  separate(term, into =  c("word1", "word2"), sep = " ")
+
+
+
+visualize_bigrams <- function(bigrams) {
+  set.seed(2016)
+  a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+  bigrams %>%
+    graph_from_data_frame() %>%
+    ggraph(layout = "fr") +
+    geom_edge_link( show.legend = FALSE, arrow = a) +
+    geom_node_point(color = "lightblue", size = 2) +
+    geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+    theme_void()
+}
+
+
+bigram_graph %>% 
+  filter(count>20,
+  !str_detect(word1, "\\d"),
+  !str_detect(word2, "\\d")) %>% 
+  visualize_bigrams()
+```
+
+
+I $Trigrammi$ sono invece sottosequenze composte da tre tokens adiacenti. 
+```{r}
+trigrams <- term_stats(corpus_new, ngrams = 3) 
+trigrams <- trigrams %>% 
+  select(-support)
+trigrams <- as.data.frame(trigrams)
+head(trigrams, 10) 
+```
+
+Nel seguente graficono sono rappresentati i trigrammi aventi una frequenza maggiore di 70. Il trigramma maggiormente utilizzato è "vitalizi ripartire attività", infatti la manifestazione si basava sulla volontà dei proprietari di attività, in particolare ristoranti, di voler riaprire. Le loro richieste sono rivolte al governo e quindi a coloro che percepiscono un vitalizio e non devono preoccuparsi della ripartenza della propria attività. 
+```{r}
+trigrams %>% 
+        filter(count > 70) %>% 
+        ggplot(aes(x= reorder(term, count), y= count)) + geom_col() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + coord_flip() + xlab(label = "trigrams")
+```
+
+L' $Engagement$ è un indice calcolato per ogni utente che consente di quantificare quante interazioni ha ricevuto ogni utente dopo aver pubblicato i tweets oggetto della nostra analisi. 
+```{r}
+eng_medio<-function(data) {
+  likes<-aggregate(data$favorite_count, by=list(data$screen_name), FUN=sum)
+  retws<-aggregate(data$retweet_count, by=list(data$screen_name), FUN=sum)
+  numerator<-likes$x+retws$x
+  denominator<-table(data$screen_name)
+  risultato<-(numerator/denominator)
+  rownames(risultato)<-likes$Group.1
+  risultato<-sort(risultato, decreasing = TRUE)
+  return(risultato)
+}
+
+engagement <- as.data.frame(eng_medio(dset))
+colnames(engagement) <- c("user", "engage")
+```
+
+Gli utenti aventi un engagement pari a 0 sono: 
+```{r}
+zeroeng <- engagement %>% 
+  filter(engage == 0) %>% 
+  nrow() %>% 
+  as.data.frame()
+totusers <- nrow(engagement)
+perc <- as.data.frame(zeroeng/totusers * 100)
+stateng <- cbind(zeroeng, perc)
+colnames(stateng) <- c("users", "perc")
+stateng
+```
+
+Gli utenti aventi i valori di engagement più alti invece sono:
+```{r}
+engagement %>% 
+  filter(engage > 450) %>% 
+  ggplot(aes(reorder(x = user, engage), y=engage))+ geom_bar(stat = "identity", fill = "blue") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + coord_flip() + ylab(label = "engagement") + xlab(label = "user")
+```
+
+In particolare l'utente avente l'engagement maggiore è "stanzaselvaggia".
+
+
+### SEMANTIC NETWORK e COMMUNITY DETECTION 
+Le reti semantiche sono grafi sia orientati che non orientati che rappresentano le relazioni fra le parole, dove i vertici sono costituiti dalle parole e gli archi le relazioni semantiche fra di esse.
+La funzione semnet permette di creare una rete semantica attraverso il calcolo delle co-occorenze,ovvero si calcola la frequenza con cui due parole si sono verificate all'interno dello stesso documento. 
+ 
+Nella prima Rete Semantica abbiamo utilizzato i primi 20 Tweet, notiamo che le parole che hanno maggiori relazioni con le altre sono :
+
+1. Meloni
+2. Ristoratori
+3. Covid
+
+ 
+Inoltre, Nella prima rete semantica utilizziamo l'algortimo fast greedy modularity optimization che cerca di trovare delle community all'interno del grafo, ottimizzando direttamente il punteggio di modularità.
+ 
+La $modularita'$ è la differenza tra il numero di legami e il numero di legami attesi nel caso la disposizione fosse casuale
+
+1. Se è Positiva vi è la probailità che vi sia un communitye
+2. Se è uguale a 0 indica che i legami sono casuali 
+3. Se è Negativa non vi è alcuna community 
+
+ 
+Il $Fastgreedy \ algorithm$ considera ciascun vertice come una community e unisce 2 vertici in modo tale che risulti il maggiore aumento o la minore diminuzione del valore di modularità.
+ 
+Nella seconda Rete Semantica abbiamo utilizzato i tweet successivi (20-40), e notiamo che le parole che ha nno maggiori relazioni con le altre sono :
+
+1. Ristoratori
+2. Condono fiscale
+
+ 
+Inoltre, Nella seconda rete semantica utilizziamo l'algoritmo Girvan  and Newman   come algoritmo di community detection :
+
+1. Calcola l'Edge betweenness ovvero il numero di shortest-path che vi sono fra due nodi
+2. Ad ogni arco viene assegnato un edge betweness score
+3. L'arco con il più alto score di edge betweenness viene eliminato
+4. Si ricalcola L'edge betwnesss 
+
+ 
+
+l'edge betweenness score di un arco misura il numero di percorsi più brevi fra due vertici. L'idea del edge betweness score  per la community detection  è basata sul fatto che  è probabile che gli archi che collegano moduli separati abbiano un edge-betwenness score elevato poiché tutti i percorsi più brevi da un modulo all'altro devono attraversarlo. Quindi, se ci muoviamo gradualmente l'arco con il punteggio di edge betweness più alto, otterremo una mappa gerarchica.
+
+La differenza fra questi due algoritmi è che Il Fast-Greedy algorithm ha un costo computazionale minore rispetto al Girvan and Newman 
+$O(m+n)$ vs $O(m^2n)$ 
+ 
+```{r}
+#SEMANTIC NETWORK 1
+corp_quanteda <- corpus(corpus_new)
+ 
+tc = create_tcorpus(corp_quanteda[1:20], split_sentences = TRUE)
+g = semnet(tc, 'token',measure="count_undirected")
+#igraph::get.data.frame(g)
+ 
+ 
+
+plot_semnet(g,edgewidth_coef=0.01,vertexsize_coef=0.3,labelsize_coef=0.3,labelspace_coef=1, reduce_labeloverlap=T,
+vertex.label.dist=0.20)
+
+```
+ 
+
+```{r}
+#COMMUNITY DETECTION 1
+community_semantic <-  igraph::cluster_fast_greedy(g, weights = g$weight)
+ 
+#community_semantic$membership
+sizes(community_semantic)
+modularity(community_semantic)
+plot(community_semantic, g, vertex.label=NA, vertex.size=5)
+```
+ 
+
+```{r}
+#2 SEMANTIC NETWORK (20-40 Tweet)
+tc2 = create_tcorpus(corp_quanteda[20:40], split_sentences = TRUE)
+g2 = semnet(tc2, 'token')
+#igraph::get.data.frame(g2)
+ 
+
+
+plot_semnet(g2,edgewidth_coef=0.01,vertexsize_coef=0.3,labelsize_coef=0.3,labelspace_coef=1, reduce_labeloverlap=T,
+vertex.label.dist=0.20)
+
+```
+ 
+
+```{r}
+#COMMUNITY DETECTION 2
+eb <- cluster_edge_betweenness(g2)
+#eb$membership
+sizes(eb)
+modularity(eb)
+plot(g, vertex.color=membership(eb),vertex.label=NA)
+```
+
+
+La sentiment analysis è un ramo di ricerca del text mining, rappresenta il trattamento computazionale di opinioni e di sentimenti.
+I metodi di analisi possono essere suddivisi in due categorie: supervisionati e non supervisionati. Fanno parte dei metodi supervisionati, tutti quelli che presentano categorie semantiche note a priori o che vengono individuate dal training set; i metodi non supervisionati sono invece quelli in cui le categorie semantiche non sono note e vengono individuate a posteriori, attraverso la ricerca di ricorrenze in gruppi omogenei.
+
+```{r}
+d<-get_nrc_sentiment(dset$text)
+head(d,10) 
+td<-data.frame(t(d))
+td_new <- data.frame(rowSums(td[1:7832]))
+names(td_new)[1] <- "count"
+td_new <- cbind("sentiment" = rownames(td_new), td_new)
+rownames(td_new) <- NULL
+td_new2<-td_new[1:8,]
+```
+
+Rappresentazione grafica della frequenza dei sentimenti.
+Nella nostra analisi andiamo ad individuare diverse tipologie di sentimenti espressi nei tweet relativi all’hashtag ‘ioapro’. Tali sentiment, vengono poi rappresentati in un istogramma, dal quale si può notare che, la maggior parte degli utenti hanno fiducia ed aspettative sui piani del governo. Tuttavia, una buona parte degli utenti, mostra invece sentimenti di paura e tristezza.
+```{r}
+quickplot(sentiment, data=td_new2, weight=count, geom="bar", fill=sentiment, ylab="count")+ggtitle("Sentiments su #ioapro")
+```
+
+Anche attraverso la rappresentazione grafica delle percentuali di emotions nei tweet, si nota circa un 20% relativo alle aspettative ed un 15% di fiducia. Infine, tristezza e paura ( gli altri due sentiment più frequenti) si attestano all'incirca al 12%.
+```{r}
+barplot(
+  sort(colSums(prop.table(d[, 1:8]))),
+  horiz = TRUE,
+  cex.names = 0.7,
+  las = 1,
+  main = "Emotions nei tweets", xlab="Percentage")
+```
+
+
+
+
